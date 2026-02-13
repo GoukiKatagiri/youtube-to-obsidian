@@ -2,7 +2,7 @@
 # YouTube → Obsidian 自動化パイプライン
 # Usage: youtube-to-obsidian.sh <YouTube URL>
 #
-# PopClip拡張またはClaude Code Slash Commandから呼び出される。
+# キーボードショートカット / PopClip / Claude Code Slash Command / シェルから呼び出される。
 # 1. URLからvideo_idを抽出
 # 2. yt-dlp でメタデータ取得
 # 3. youtube-transcript-api で字幕取得（手動字幕優先）
@@ -75,6 +75,9 @@ if [[ -z "$VIDEO_ID" ]]; then
   echo "Error: Could not extract video_id from URL: $URL" >&2
   exit 1
 fi
+
+# --- 処理開始通知 ---
+osascript -e "display notification \"処理開始: ${URL}\" with title \"YouTube→Obsidian\"" 2>/dev/null || true
 
 TMPDIR_WORK=$(mktemp -d /tmp/youtube-to-obsidian.XXXXXX)
 trap 'rm -rf "$TMPDIR_WORK"' EXIT
@@ -182,7 +185,7 @@ with open(f"{tmpdir}/transcript.json", "w", encoding="utf-8") as f:
 PYTHON_SCRIPT
 
 TRANSCRIPT_ERROR=$(jq -r '.error // ""' "$TMPDIR_WORK/transcript.json")
-if [[ -n "$TRANSCRIPT_ERROR" && "$TRANSCRIPT_ERROR" != "" ]]; then
+if [[ -n "$TRANSCRIPT_ERROR" ]]; then
   # 通知メッセージは短く切り詰め、特殊文字を除去
   NOTIFY_ERR=$(echo "$TRANSCRIPT_ERROR" | head -1 | cut -c1-80 | sed "s/[\"'\\\\]//g")
   osascript -e "display notification \"字幕取得失敗: ${NOTIFY_ERR}\" with title \"YouTube→Obsidian\" sound name \"Basso\""
@@ -227,6 +230,13 @@ jq -n \
 echo "Generating summary with Claude..."
 SAFE_TITLE=$(echo "$TITLE" | sed 's/[\/\\:*?"<>|]//g' | sed 's/　/ /g' | sed 's/  */ /g' | sed 's/^ //;s/ $//')
 NOTE_PATH="${VAULT_PATH}/${SOURCE_FOLDER}/${SAFE_TITLE}.md"
+
+# --- 既存ノートチェック ---
+if [[ -f "$NOTE_PATH" ]]; then
+  osascript -e "display notification \"既にノートが存在します: ${SAFE_TITLE}\" with title \"YouTube→Obsidian\" sound name \"Basso\""
+  echo "Skip: Note already exists at $NOTE_PATH" >&2
+  exit 0
+fi
 
 CLAUDECODE= claude -p "あなたはObsidian Vaultのノート作成アシスタントです。以下のYouTube動画データからSource型ノートを作成してください。
 
@@ -307,6 +317,45 @@ ${NOTE_PATH}
 ## 動画データ
 $(cat "$TMPDIR_WORK/youtube-data.json")
 " --permission-mode acceptEdits --allowedTools "Write" --output-format text 2>/dev/null
+
+# --- claude 失敗時のフォールバック: スケルトンノート作成 ---
+if [[ ! -f "$NOTE_PATH" ]]; then
+  echo "Warning: Claude failed, creating skeleton note..." >&2
+  mkdir -p "$(dirname "$NOTE_PATH")"
+  cat > "$NOTE_PATH" << SKELETON
+- Source
+---
+${URL}
+
+---
+
+### メタデータ
+- **タイトル**: ${TITLE}
+- **チャンネル**: ${CHANNEL}
+- **公開日**: ${UPLOAD_DATE_FMT}
+- **長さ**: ${DURATION_STRING}
+- **言語**: ${TRANSCRIPT_LANG}
+- **文字起こし**: ${TRANSCRIPT_METHOD}
+- **要約日**: ${TODAY}
+
+---
+
+### キーワード
+\`未生成\`
+
+---
+
+### 概要
+> [!warning] Claude による要約が失敗しました。\`/youtube ${URL}\` で再生成してください。
+
+---
+
+### トランスクリプト
+> [!note]- 全文を表示
+$(echo "$TRANSCRIPT_TEXT" | sed 's/^/> /')
+
+SKELETON
+fi
 
 # --- 結果確認 + 通知 ---
 if [[ -f "$NOTE_PATH" ]]; then
