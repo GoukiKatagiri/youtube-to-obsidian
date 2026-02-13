@@ -1,0 +1,10 @@
+#popclip
+name: YouTube→Obsidian
+icon: symbol:play.rectangle.fill
+interpreter: zsh
+requirements: [url]
+regex: https?://(www\.)?(youtube\.com/(watch|shorts|live)|youtu\.be/)\S+
+after: show-status
+shell script: |
+  nohup "$HOME/.claude/scripts/youtube-to-obsidian.sh" "$POPCLIP_TEXT" > /tmp/youtube-to-obsidian.log 2>&1 &
+  exit 0

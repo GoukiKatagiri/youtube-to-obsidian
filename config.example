@@ -1,0 +1,13 @@
+# YouTube to Obsidian 設定ファイル
+# コピーして ~/.config/youtube-to-obsidian/config に配置してください
+
+# Obsidian Vault のルートパス
+VAULT_PATH="/path/to/your/vault"
+
+# Source型ノートの保存先（Vaultルートからの相対パス）
+SOURCE_FOLDER="Sources"
+
+# claude -p に渡す追加のPATH（pyenvやHomebrewのパスなど）
+# 複数ある場合はコロン区切りで指定
+# 空の場合はデフォルトPATHのみ使用
+EXTRA_PATH="/opt/homebrew/bin"

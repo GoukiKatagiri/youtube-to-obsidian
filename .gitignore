@@ -1,0 +1,10 @@
+# User config (contains personal paths)
+config
+
+# macOS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
