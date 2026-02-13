@@ -19,6 +19,7 @@ from youtube_transcript_api import YouTubeTranscriptApi
 api = YouTubeTranscriptApi()
 transcript_list = api.list(video_id)
 # 手動字幕 → 自動生成字幕の優先順位で取得
+# snippet.start からタイムスタンプを取得し [MM:SS] 形式で付与
 ```
 
 字幕取得に失敗した場合は、利用可能な字幕の一覧をユーザーに提示して相談する。
@@ -51,13 +52,19 @@ transcript_list = api.list(video_id)
 
 ---
 
+### キーワード
+`keyword1` `keyword2` `keyword3` ...
+
+---
+
 ### 概要
 {2-3文の概要}
 
 ---
 
-### 主要ポイント
-- {ポイント1} → 関連: [[既存ノート]]
+### タイムライン
+- [MM:SS](https://youtu.be/{video_id}?t={seconds}) **見出し** — 内容の説明
+- [MM:SS](https://youtu.be/{video_id}?t={seconds}) **見出し** — 内容の説明 → [[関連ノート]]
 - ...
 
 ---
@@ -74,7 +81,9 @@ transcript_list = api.list(video_id)
 
 ### トランスクリプト
 > [!note]- 全文を表示
-> {トランスクリプト全文}
+> [00:00] テキスト
+> [00:15] テキスト
+> ...
 ```
 
 ## ルール
@@ -82,7 +91,10 @@ transcript_list = api.list(video_id)
 - 話者の意見と事実を区別する（「〜と主張している」vs「〜である」）
 - 見出しは ### (h3) から開始
 - 関連しそうな概念には [[wikilink]] を付与
-- トランスクリプト全文はcallout折りたたみ内に格納
+- トランスクリプト全文はcallout折りたたみ内に格納（タイムスタンプ付き）
+- キーワードセクション: 動画の主要なキーワード・重要概念をインラインコード形式で列挙
+- タイムラインセクション: 時系列順で主要ポイントを整理。各タイムスタンプは `[MM:SS](https://youtu.be/{video_id}?t={seconds})` 形式のYouTubeリンク
+- タイムスタンプの秒数計算: [MM:SS] → t=MM*60+SS（例: [02:15] → t=135）
 - エラー時はユーザーと相談（利用可能な字幕一覧の提示等）
 
 対象URL: $ARGUMENTS

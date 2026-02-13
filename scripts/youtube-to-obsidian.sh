@@ -161,8 +161,14 @@ try:
 
     if selected:
         fetched = selected.fetch()
-        text_parts = [snippet.text for snippet in fetched]
-        result["transcript"] = "\n".join(text_parts)
+        # タイムスタンプ付きトランスクリプト
+        timestamped_parts = []
+        for snippet in fetched:
+            minutes = int(snippet.start // 60)
+            seconds = int(snippet.start % 60)
+            timestamp = f"[{minutes:02d}:{seconds:02d}]"
+            timestamped_parts.append(f"{timestamp} {snippet.text}")
+        result["transcript"] = "\n".join(timestamped_parts)
         result["method"] = method
         result["language"] = selected.language_code
     else:
@@ -195,6 +201,7 @@ TODAY=$(date +%Y-%m-%d)
 
 jq -n \
   --arg url "$URL" \
+  --arg video_id "$VIDEO_ID" \
   --arg title "$TITLE" \
   --arg channel "$CHANNEL" \
   --arg upload_date "$UPLOAD_DATE_FMT" \
@@ -205,6 +212,7 @@ jq -n \
   --arg transcript "$TRANSCRIPT_TEXT" \
   '{
     url: $url,
+    video_id: $video_id,
     title: $title,
     channel: $channel,
     upload_date: $upload_date,
@@ -247,14 +255,19 @@ CLAUDECODE= claude -p "あなたはObsidian Vaultのノート作成アシスタ�
 
 ---
 
+### キーワード
+\`keyword1\` \`keyword2\` \`keyword3\` ...
+
+---
+
 ### 概要
 {2-3文の概要}
 
 ---
 
-### 主要ポイント
-- {ポイント1}
-- {ポイント2}
+### タイムライン
+- [MM:SS](https://youtu.be/{video_id}?t={seconds}) **見出し** — 内容の説明
+- [MM:SS](https://youtu.be/{video_id}?t={seconds}) **見出し** — 内容の説明 → [[関連ノート]]
 - ...
 
 ---
@@ -272,7 +285,9 @@ CLAUDECODE= claude -p "あなたはObsidian Vaultのノート作成アシスタ�
 
 ### トランスクリプト
 > [!note]- 全文を表示
-> {トランスクリプト全文。各行の先頭に \"> \" を付ける}
+> [00:00] テキスト
+> [00:15] テキスト
+> ...
 
 \`\`\`
 
@@ -281,7 +296,10 @@ CLAUDECODE= claude -p "あなたはObsidian Vaultのノート作成アシスタ�
 - 話者の意見と事実を区別する（「〜と主張している」vs「〜である」）
 - 見出しは ### (h3) から開始
 - 関連しそうな概念には [[wikilink]] を付与
-- トランスクリプト全文はObsidianのcallout折りたたみ内に格納
+- トランスクリプト全文はObsidianのcallout折りたたみ内に格納（タイムスタンプ付き）
+- キーワードセクション: 動画の主要なキーワード・重要概念をインラインコード形式で列挙
+- タイムラインセクション: トランスクリプトのタイムスタンプ [MM:SS] を参考に、時系列順で主要ポイントを整理。各タイムスタンプは https://youtu.be/{video_id}?t={seconds} 形式のYouTubeリンクにする。video_id は動画データの video_id フィールドを使用
+- タイムスタンプの秒数計算: [MM:SS] → t=MM*60+SS （例: [02:15] → t=135）
 
 ## 保存先
 ${NOTE_PATH}

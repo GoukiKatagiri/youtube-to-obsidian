@@ -1,34 +1,34 @@
 # YouTube to Obsidian
 
-YouTube動画を文字起こし・要約して、Obsidian Vaultに Source型ノートとして自動保存するツール。PopClip / Claude Code Slash Command / シェルから起動できる。
+YouTube動画を文字起こし・要約して、Obsidian Vaultに Source型ノートとして自動保存するツール。キーボードショートカット / PopClip / Claude Code Slash Command / シェルから起動できる。
 
 ## アーキテクチャ
 
 ```
 YouTube URL
     │
-    ▼
-┌─────────────────────────────┐
-│  youtube-to-obsidian.sh     │
-│                             │
-│  1. yt-dlp      → メタデータ│
-│  2. transcript  → 字幕取得  │
-│  3. claude -p   → 要約生成  │
-│  4. Write       → ノート作成│
-└─────────────────────────────┘
-    │
-    ▼
+    ├── キーボードショートカット ──┐
+    ├── PopClip                  │
+    ├── /youtube URL             │
+    └── シェル直接実行            │
+                                 ▼
+┌──────────────────────────────────────────┐
+│  youtube-to-obsidian-trigger.sh          │
+│  (ブラウザからURL自動取得)                │
+└──────────────┬───────────────────────────┘
+               ▼
+┌──────────────────────────────────────────┐
+│  youtube-to-obsidian.sh                  │
+│                                          │
+│  1. yt-dlp      → メタデータ             │
+│  2. transcript  → タイムスタンプ付き字幕  │
+│  3. claude -p   → 要約生成               │
+│  4. Write       → ノート作成             │
+└──────────────────────────────────────────┘
+               ▼
 Obsidian Vault
 └── {SOURCE_FOLDER}/
     └── {動画タイトル}.md
-```
-
-**3つの入口:**
-
-```
-PopClip          →  URLを選択するだけ
-/youtube URL     →  Claude Code内で対話的に実行
-シェル直接実行    →  youtube-to-obsidian.sh URL
 ```
 
 ## デモ
@@ -53,14 +53,20 @@ https://www.youtube.com/watch?v=example
 
 ---
 
+### キーワード
+`キーワード1` `キーワード2` `キーワード3`
+
+---
+
 ### 概要
 この動画は〜について解説し、〜という結論を示している。
 
 ---
 
-### 主要ポイント
-- ポイント1 → 関連: [[関連ノート]]
-- ポイント2
+### タイムライン
+- [00:00](https://youtu.be/example?t=0) **導入** — 動画の目的と背景を説明
+- [02:15](https://youtu.be/example?t=135) **ポイント1** — 内容の説明 → [[関連ノート]]
+- [05:30](https://youtu.be/example?t=330) **ポイント2** — 内容の説明
 - ...
 
 ---
@@ -77,7 +83,9 @@ https://www.youtube.com/watch?v=example
 
 ### トランスクリプト
 > [!note]- 全文を表示
-> トランスクリプト全文がここに格納される
+> [00:00] トランスクリプト全文がここに格納される
+> [00:15] タイムスタンプ付きで表示
+> ...
 ```
 
 ## 導入方法
@@ -122,7 +130,9 @@ cp /tmp/youtube-to-obsidian/config.example ~/.config/youtube-to-obsidian/config
 # 3. スクリプトをコピー
 mkdir -p ~/.claude/scripts
 cp /tmp/youtube-to-obsidian/scripts/youtube-to-obsidian.sh ~/.claude/scripts/
+cp /tmp/youtube-to-obsidian/scripts/youtube-to-obsidian-trigger.sh ~/.claude/scripts/
 chmod +x ~/.claude/scripts/youtube-to-obsidian.sh
+chmod +x ~/.claude/scripts/youtube-to-obsidian-trigger.sh
 
 # 4. PopClip拡張をコピー（PopClip使用時のみ）
 cp /tmp/youtube-to-obsidian/scripts/youtube-to-obsidian.popcliptxt ~/.claude/scripts/
@@ -164,11 +174,11 @@ EXTRA_PATH="/opt/homebrew/bin"
 
 ## 使い方
 
-### PopClip から
+### キーボードショートカットから（推奨）
 
-1. ブラウザでYouTube URLを選択
-2. PopClipメニューから「YouTube→Obsidian」をクリック
-3. macOS通知で完了が報告される
+ブラウザでYouTube動画を開いた状態で、設定したショートカットキーを押すだけ。URL取得からノート作成まで自動で実行される。
+
+設定方法は下記「キーボードショートカットの設定」を参照。
 
 ### `/youtube` Slash Command から
 
@@ -180,22 +190,66 @@ Claude Code 内で:
 
 対話的に実行されるため、エラー時に字幕の選択肢を相談できる。
 
+### PopClip から
+
+1. ブラウザでYouTube URLを選択
+2. PopClipメニューから「YouTube→Obsidian」をクリック
+3. macOS通知で完了が報告される
+
 ### シェルから直接実行
 
 ```bash
 ~/.claude/scripts/youtube-to-obsidian.sh "https://www.youtube.com/watch?v=xxxxx"
 ```
 
+## キーボードショートカットの設定
+
+### A. macOS ショートカット.app（推奨）
+
+1. **ショートカット.app** を開く
+2. **新規ショートカット** を作成
+3. **「シェルスクリプトを実行」** アクションを追加
+4. スクリプトに以下を入力:
+   ```
+   ~/.claude/scripts/youtube-to-obsidian-trigger.sh
+   ```
+5. 右上の **詳細 (i)** > **キーボードショートカットを追加** > 任意のキーを設定
+
+### B. Automator Quick Action
+
+1. **Automator.app** で「クイックアクション」を新規作成
+2. ワークフローが受け取る現在の項目: **入力なし**、検索対象: **すべてのアプリケーション**
+3. **「シェルスクリプトを実行」** アクションを追加
+4. スクリプトに以下を入力:
+   ```
+   ~/.claude/scripts/youtube-to-obsidian-trigger.sh
+   ```
+5. 名前を付けて保存（例: `YouTube to Obsidian`）
+6. **System Settings** > **Keyboard** > **Keyboard Shortcuts** > **Services** でショートカットを割り当て
+
+### 対応ブラウザ
+
+| ブラウザ | 対応状況 |
+|---|---|
+| Safari | OK |
+| Google Chrome | OK |
+| Arc | OK |
+| Dia | OK |
+| Brave | OK |
+| Vivaldi | OK |
+| Microsoft Edge | OK |
+
 ## 生成されるノートの構造
 
 | セクション | 内容 |
 |---|---|
 | メタデータ | タイトル、チャンネル、公開日、長さ、言語、字幕種別、要約日 |
+| キーワード | 主要なキーワード・重要概念（インラインコード形式） |
 | 概要 | 2-3文の要約 |
-| 主要ポイント | 5-10項目の箇条書き（wikilink付き） |
+| タイムライン | 時系列順の主要ポイント（YouTubeリンク付きタイムスタンプ） |
 | 詳細ノート | 深掘りが必要な内容（任意） |
 | 発展の種 | 派生ノート候補 2-3個 |
-| トランスクリプト | 折りたたみ内に全文格納 |
+| トランスクリプト | 折りたたみ内にタイムスタンプ付き全文格納 |
 
 ノートタイプは `Source`、Obsidian Vaultの `{SOURCE_FOLDER}/` に保存される。
 
@@ -213,7 +267,7 @@ Claude Code 内で:
 
 ### `command not found: yt-dlp` / `claude`
 
-PopClipなど非対話シェルからの起動時に PATH が不足する場合がある。`config` の `EXTRA_PATH` に必要なパスを追加する:
+PopClipやキーボードショートカットなど非対話シェルからの起動時に PATH が不足する場合がある。`config` の `EXTRA_PATH` に必要なパスを追加する:
 
 ```bash
 # 例: pyenv + Homebrew + Claude Code
@@ -248,6 +302,10 @@ shell script: |
   nohup /Users/yourname/.claude/scripts/youtube-to-obsidian.sh "$POPCLIP_TEXT" > /tmp/youtube-to-obsidian.log 2>&1 &
   exit 0
 ```
+
+### 未対応ブラウザでショートカットが動作しない
+
+`youtube-to-obsidian-trigger.sh` がサポートしていないブラウザの場合、macOS通知で「未対応ブラウザ」と表示される。スクリプト内の `case` 文にブラウザを追加して対応可能。
 
 ### Claude Code の認証エラー
 
