@@ -6,5 +6,5 @@ requirements: [url]
 regex: https?://(www\.)?(youtube\.com/(watch|shorts|live)|youtu\.be/)\S+
 after: show-status
 shell script: |
-  nohup "$HOME/.claude/scripts/youtube-to-obsidian.sh" "$POPCLIP_TEXT" > /tmp/youtube-to-obsidian.log 2>&1 &
+  "$HOME/.claude/scripts/youtube-to-obsidian.sh" "$POPCLIP_TEXT" >> /tmp/youtube-to-obsidian.log 2>&1 & disown
   exit 0
