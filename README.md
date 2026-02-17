@@ -4,6 +4,19 @@ YouTube動画をAIで分析し、Obsidian Vaultに**知識ノート**として�
 
 キーボードショートカット / PopClip / Claude Code Slash Command / シェルから起動できる。
 
+## クイックスタート
+
+```bash
+# 1. クローン & インストール
+gh repo clone GoukiKatagiri/youtube-to-obsidian ~/Projects/youtube-to-obsidian
+~/Projects/youtube-to-obsidian/install.sh
+
+# 2. 実行
+~/.claude/scripts/youtube-to-obsidian.sh "https://www.youtube.com/watch?v=xxxxx"
+```
+
+または Claude Code 内で `/youtube <URL>` を実行。初回は対話的にセットアップガイドが起動する。
+
 ## なぜこのツール？
 
 YouTube動画の「要約ツール」は多数存在するが、このツールは**知識管理（PKM）への統合**を前提に設計されている:
@@ -108,15 +121,13 @@ https://www.youtube.com/watch?v=example
 
 ### A. Claude Code で導入（推奨）
 
-Claude Code に以下のプロンプトを貼るだけで導入できます:
+Claude Code 内で `/youtube <任意のYouTube URL>` を実行するだけ。設定ファイルが未作成の場合、対話的にセットアップガイドが起動し、Vault パスの検出から設定ファイルの生成まで自動で行う。
 
-```
-このリポジトリのYouTube→Obsidianツールを自分の環境に導入してください:
-https://github.com/GoukiKatagiri/youtube-to-obsidian
+事前にリポジトリのクローンとインストールは必要:
 
-1. リポジトリをクローンして install.sh を実行
-2. 設定ファイルの VAULT_PATH を自分のVaultに設定
-3. 導入結果を報告
+```bash
+gh repo clone GoukiKatagiri/youtube-to-obsidian ~/Projects/youtube-to-obsidian
+~/Projects/youtube-to-obsidian/install.sh
 ```
 
 ### B. install.sh で導入
@@ -326,6 +337,37 @@ shell script: |
 ### Claude Code の認証エラー
 
 `claude` コマンドの初回起動時に認証が必要。事前に `claude` を一度実行してログインしておく。
+
+## セキュリティ・プライバシー
+
+- **ローカル実行**: 動画データと字幕はローカルで取得・処理される。外部サービスへの送信は Claude API（要約生成）のみ
+- **YouTube Data API 不使用**: メタデータ取得は `yt-dlp`、字幕取得は `youtube-transcript-api` で行い、YouTube の公式 API キーは不要
+- **ログ**: `~/Library/Logs/youtube-to-obsidian/` に保存（`/tmp` は使用しない）。自動ローテーション（1MB超で `.old` にリネーム）
+- **デバッグ出力**: `DEBUG=1` 環境変数でのみ有効。7日で自動削除。通常実行では生成されない
+- **入力サニタイズ**: ファイル名のパストラバーサル防止、osascript インジェクション防止、`SOURCE_FOLDER` の `..` 拒否
+- **config ファイル**: `~/.config/youtube-to-obsidian/config` に保存。Vault パス等の個人情報を含むため `.gitignore` 済み
+
+## アンインストール
+
+```bash
+# スクリプト・コマンドを削除
+rm ~/.claude/scripts/youtube-to-obsidian.sh
+rm ~/.claude/scripts/youtube-to-obsidian-trigger.sh
+rm ~/.claude/scripts/youtube-to-obsidian.popcliptxt
+rm ~/.claude/commands/youtube.md
+
+# 設定を削除
+rm -rf ~/.config/youtube-to-obsidian
+
+# ログを削除
+rm -rf ~/Library/Logs/youtube-to-obsidian
+
+# テンプレートを削除（インストールしている場合）
+rm ~/.claude/skills/obsidian-note-management/references/youtube-summary-template.md
+
+# リポジトリを削除
+rm -rf ~/Projects/youtube-to-obsidian
+```
 
 ## License
 
