@@ -8,3 +8,18 @@ config
 *.swp
 *.swo
 *~
+
+# Logs & temp
+*.log
+*.tmp
+
+# IDE
+.vscode/
+.idea/
+
+# Env
+.env
+.env.*
+
+# Test artifacts
+final-hacking-note.md

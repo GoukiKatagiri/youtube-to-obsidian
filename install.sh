@@ -2,6 +2,12 @@
 # YouTube to Obsidian インストールスクリプト
 set -euo pipefail
 
+# macOS 専用ツール
+if [[ "$(uname)" != "Darwin" ]]; then
+  echo "Error: This tool requires macOS" >&2
+  exit 1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # 色付き出力
