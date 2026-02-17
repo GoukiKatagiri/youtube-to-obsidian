@@ -16,7 +16,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # ==================== ログ機構 ====================
-LOG_FILE="/tmp/youtube-to-obsidian.log"
+LOG_DIR="${HOME}/Library/Logs/youtube-to-obsidian"
+LOG_FILE="${LOG_DIR}/youtube-to-obsidian.log"
+
+# ログディレクトリ作成 + symlink 攻撃防止
+if [[ -L "$LOG_DIR" ]]; then
+  echo "Error: $LOG_DIR is a symlink (possible attack)" >&2
+  exit 1
+fi
+mkdir -p "$LOG_DIR"
+chmod 700 "$LOG_DIR"
 
 # ログローテーション（1MB超で .old にリネーム）
 if [[ -f "$LOG_FILE" ]] && (( $(stat -f%z "$LOG_FILE" 2>/dev/null || echo 0) > 1048576 )); then
@@ -25,13 +34,37 @@ fi
 
 log() { print -r -- "[$(date +%H:%M:%S)] $*" >> "$LOG_FILE"; }
 
+# ==================== 通知（osascript argv 方式） ====================
+notify() {
+  local title="$1" msg="$2" sound="${3:-Glass}"
+  title=${title//$'\r'/ } ; title=${title//$'\n'/ }
+  msg=${msg//$'\r'/ }     ; msg=${msg//$'\n'/ }
+  /usr/bin/osascript -e 'on run argv
+    set theTitle to item 1 of argv
+    set theMsg to item 2 of argv
+    set theSound to item 3 of argv
+    display notification theMsg with title theTitle sound name theSound
+  end run' -- "$title" "$msg" "$sound" >/dev/null 2>&1 || true
+}
+
 # ==================== 設定読み込み ====================
 CONFIG_FILE="${HOME}/.config/youtube-to-obsidian/config"
 
 if [[ ! -f "$CONFIG_FILE" ]]; then
   echo "Error: Config file not found: $CONFIG_FILE" >&2
   echo "Run install.sh or copy config.example to $CONFIG_FILE" >&2
-  osascript -e 'display notification "設定ファイルが見つかりません。install.sh を実行してください。" with title "YouTube→Obsidian" sound name "Basso"' 2>/dev/null || true
+  notify "YouTube→Obsidian" "設定ファイルが見つかりません。install.sh を実行してください。" "Basso"
+  exit 1
+fi
+
+# Config ファイルの安全性検証（symlink + パーミッション）
+if [[ -L "$CONFIG_FILE" ]]; then
+  echo "Error: Config file must not be a symlink: $CONFIG_FILE" >&2
+  exit 1
+fi
+local_perms=$(stat -f %Lp "$CONFIG_FILE" 2>/dev/null || echo "000")
+if (( local_perms & 002 )); then
+  echo "Error: Config file is world-writable (unsafe): $CONFIG_FILE" >&2
   exit 1
 fi
 
@@ -50,33 +83,75 @@ fi
 # 必須設定の検証
 if [[ -z "${VAULT_PATH:-}" || "$VAULT_PATH" == "/path/to/your/vault" ]]; then
   echo "Error: VAULT_PATH is not configured in $CONFIG_FILE" >&2
-  osascript -e 'display notification "VAULT_PATH が未設定です。config を編集してください。" with title "YouTube→Obsidian" sound name "Basso"' 2>/dev/null || true
+  notify "YouTube→Obsidian" "VAULT_PATH が未設定です。config を編集してください。" "Basso"
   exit 1
 fi
 
 if [[ ! -d "$VAULT_PATH" ]]; then
   echo "Error: VAULT_PATH does not exist: $VAULT_PATH" >&2
-  osascript -e "display notification \"Vault が見つかりません: ${VAULT_PATH}\" with title \"YouTube→Obsidian\" sound name \"Basso\"" 2>/dev/null || true
+  notify "YouTube→Obsidian" "Vault が見つかりません" "Basso"
   exit 1
 fi
 
 SOURCE_FOLDER="${SOURCE_FOLDER:-Sources}"
+
+# SOURCE_FOLDER のパストラバーサル防止
+if [[ "$SOURCE_FOLDER" == *".."* ]]; then
+  echo "Error: SOURCE_FOLDER must not contain '..': $SOURCE_FOLDER" >&2
+  exit 1
+fi
 
 # PopClipなど非対話シェルからの起動時にPATHが不足するため明示的に追加
 if [[ -n "${EXTRA_PATH:-}" ]]; then
   export PATH="${EXTRA_PATH}:$PATH"
 fi
 export USER="${USER:-$(whoami)}"
-export HOME="${HOME:-$(eval echo ~$USER)}"
+if [[ -z "${HOME:-}" ]]; then
+  HOME=$(dscl . -read "/Users/$USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}') || true
+  [[ -z "$HOME" ]] && { echo "Error: HOME not set and cannot be resolved" >&2; exit 1; }
+  export HOME
+fi
 
 # ==================== ユーティリティ ====================
-notify() {
-  local title="$1" msg="$2" sound="${3:-Glass}"
-  osascript -e "display notification \"${msg}\" with title \"${title}\" sound name \"${sound}\"" 2>/dev/null || true
+
+# ファイル名サニタイズ（パストラバーサル防止）
+sanitize_title() {
+  local raw="$1" clean
+  clean=$(printf '%s' "$raw" \
+    | tr -d '\000' \
+    | tr '\r\n' '  ' \
+    | sed -E 's/[\/\\:*?"<>|]/ /g; s/[[:cntrl:]]//g; s/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]]+/ /g; s/\.\.//g')
+  clean=${clean#.}
+  [[ -z "$clean" || "$clean" == "." || "$clean" == ".." ]] && clean="youtube-${VIDEO_ID:-unknown}"
+  printf '%s' "$clean"
+}
+
+# ノートパスが Vault 内に収まることを検証
+validate_note_path() {
+  local note_path="$1"
+  local resolved
+  resolved=$(cd "$(dirname "$note_path")" 2>/dev/null && pwd -P)/$(basename "$note_path")
+  [[ "$resolved" == "${VAULT_PATH}"/* ]] || { log "ERROR: path escape detected: $resolved"; exit 1; }
+}
+
+# symlink を辿らない安全な書き込み
+safe_write_note() {
+  local src="$1" dst="$2"
+  validate_note_path "$dst"
+  if [[ -L "$dst" ]]; then
+    log "ERROR: Refuse to write to symlink: $dst"
+    exit 1
+  fi
+  cp "$src" "$dst"
+}
+
+is_youtube_url() {
+  [[ "$1" =~ '^https?://(www\.)?(youtube\.com|youtu\.be)/' ]] || return 1
 }
 
 extract_video_id() {
   local url="$1"
+  is_youtube_url "$url" || { echo ""; return; }
   if [[ "$url" =~ 'youtu\.be/([a-zA-Z0-9_-]{11})' ]]; then
     echo "${match[1]}"
   elif [[ "$url" =~ '[?&]v=([a-zA-Z0-9_-]{11})' ]]; then
@@ -109,7 +184,8 @@ validate_note() {
 
 create_skeleton() {
   mkdir -p "$(dirname "$NOTE_PATH")"
-  cat > "$NOTE_PATH" << SKELETON
+  local SKEL="$TMPDIR_WORK/skeleton.md"
+  cat > "$SKEL" << SKELETON
 - Source
 ---
 ${URL}
@@ -157,6 +233,7 @@ ${URL}
 $(cat "$TMPDIR_WORK/transcript.cleaned.txt" 2>/dev/null | sed 's/^/> /' || echo "> 字幕なし")
 
 SKELETON
+  safe_write_note "$SKEL" "$NOTE_PATH"
   notify "YouTube→Obsidian" "スケルトンノートを作成しました" "Basso"
   log "Skeleton note created at $NOTE_PATH"
 }
@@ -455,11 +532,15 @@ stage_generate() {
     log "WARN: claude -p exited with code $CLAUDE_EXIT"
   fi
 
-  # デバッグ出力（常時保存）
-  local DEBUG_DIR="${HOME}/.config/youtube-to-obsidian/debug"
-  mkdir -p "$DEBUG_DIR"
-  cp "$CLAUDE_RAW" "$DEBUG_DIR/${RUN_ID}.raw" 2>/dev/null || true
-  jq -r 'keys' "$CLAUDE_RAW" >> "$LOG_FILE" 2>/dev/null || true
+  # デバッグ出力（DEBUG=1 でのみ保存、7日で自動削除）
+  if [[ "${DEBUG:-}" == "1" ]]; then
+    local DEBUG_DIR="${HOME}/.config/youtube-to-obsidian/debug"
+    mkdir -p "$DEBUG_DIR"
+    cp "$CLAUDE_RAW" "$DEBUG_DIR/${RUN_ID}.raw" 2>/dev/null || true
+    jq -r 'keys' "$CLAUDE_RAW" >> "$LOG_FILE" 2>/dev/null || true
+    # 7日以上前のデバッグファイルを削除
+    find "$DEBUG_DIR" -name "*.raw" -mtime +7 -delete 2>/dev/null || true
+  fi
 
   # JSON からノート本文を抽出（multi-path jq）
   local note=""
@@ -595,8 +676,10 @@ stage_save() {
 
   if [[ -f "$FINAL" ]] && [[ -s "$FINAL" ]]; then
     mkdir -p "$(dirname "$NOTE_PATH")"
-    cp "$FINAL" "$NOTE_PATH"
-    notify "YouTube→Obsidian ✓" "$SAFE_TITLE"
+    safe_write_note "$FINAL" "$NOTE_PATH"
+    local safe_msg
+    safe_msg=$(echo "$SAFE_TITLE" | head -c 60 | sed "s/[\"'\\\\]//g")
+    notify "YouTube→Obsidian ✓" "$safe_msg"
     log "SUCCESS: Note saved to $NOTE_PATH"
   else
     log "WARN: No valid note generated, creating skeleton"
@@ -627,18 +710,20 @@ main() {
   trap 'rm -rf "$TMPDIR_WORK"' EXIT
 
   # 開始通知
-  notify "YouTube→Obsidian" "処理開始: $URL"
+  notify "YouTube→Obsidian" "処理開始: $VIDEO_ID"
 
   # --- fetch ---
   stage_fetch
 
   # ノートパス準備
-  SAFE_TITLE=$(echo "$TITLE" | sed 's/[\/\\:*?"<>|]//g' | sed 's/　/ /g' | sed 's/  */ /g' | sed 's/^ //;s/ $//')
+  SAFE_TITLE=$(sanitize_title "$TITLE")
   NOTE_PATH="${VAULT_PATH}/${SOURCE_FOLDER}/${SAFE_TITLE}.md"
+  mkdir -p "$(dirname "$NOTE_PATH")"
+  validate_note_path "$NOTE_PATH"
 
   # 既存ノートチェック
   if [[ -f "$NOTE_PATH" ]]; then
-    notify "YouTube→Obsidian" "既にノートが存在します: ${SAFE_TITLE}" "Basso"
+    notify "YouTube→Obsidian" "既にノートが存在します" "Basso"
     log "SKIP: Note already exists at $NOTE_PATH"
     exit 0
   fi
